@@ -1,6 +1,4 @@
-from pathlib import Path
-
-sql_content = r"""/*
+/*
 ================================================================================
 PROJECT: Myntra Sales Analysis
 TOOLS: SQL, Microsoft Excel, Power BI
@@ -543,10 +541,3 @@ LIMIT 20;
 END OF SQL FILE
 ================================================================================
 */
-"""
-
-output_path = Path("/mnt/data/Myntra_Sales_Analysis.sql")
-output_path.write_text(sql_content, encoding="utf-8")
-
-print(f"Created: {output_path}")
-print(f"Size: {output_path.stat().st_size:,} bytes")
