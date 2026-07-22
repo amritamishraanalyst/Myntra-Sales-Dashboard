@@ -1,0 +1,552 @@
+from pathlib import Path
+
+sql_content = r"""/*
+================================================================================
+PROJECT: Myntra Sales Analysis
+TOOLS: SQL, Microsoft Excel, Power BI
+DATA SOURCE: Kaggle
+SQL DIALECT: MySQL 8.0+
+================================================================================
+
+IMPORTANT:
+1. Import the Kaggle dataset into a table named: myntra_sales
+2. The queries below assume these column names:
+
+   order_id
+   order_date
+   brand_name
+   product_name
+   category
+   sub_category
+   customer_category
+   state
+   sales_amount
+   revenue
+   discount_percent
+
+3. If your dataset uses different column names, replace them in the queries.
+4. These queries are non-destructive. They analyse the data without deleting it.
+================================================================================
+*/
+
+
+-- ============================================================================
+-- 1. SELECT THE DATABASE
+-- ============================================================================
+
+-- Replace myntra_project with your actual database name.
+USE myntra_project;
+
+
+-- ============================================================================
+-- 2. DATA PREVIEW
+-- ============================================================================
+
+SELECT *
+FROM myntra_sales
+LIMIT 10;
+
+
+-- ============================================================================
+-- 3. CHECK TABLE STRUCTURE
+-- ============================================================================
+
+DESCRIBE myntra_sales;
+
+
+-- ============================================================================
+-- 4. COUNT TOTAL RECORDS
+-- ============================================================================
+
+SELECT COUNT(*) AS total_records
+FROM myntra_sales;
+
+
+-- ============================================================================
+-- 5. CHECK DATE RANGE
+-- ============================================================================
+
+SELECT
+    MIN(order_date) AS earliest_order_date,
+    MAX(order_date) AS latest_order_date
+FROM myntra_sales;
+
+
+-- ============================================================================
+-- 6. CHECK FOR MISSING VALUES
+-- ============================================================================
+
+SELECT
+    SUM(CASE WHEN order_id IS NULL OR TRIM(order_id) = '' THEN 1 ELSE 0 END)
+        AS missing_order_ids,
+
+    SUM(CASE WHEN order_date IS NULL THEN 1 ELSE 0 END)
+        AS missing_order_dates,
+
+    SUM(CASE WHEN brand_name IS NULL OR TRIM(brand_name) = '' THEN 1 ELSE 0 END)
+        AS missing_brand_names,
+
+    SUM(CASE WHEN product_name IS NULL OR TRIM(product_name) = '' THEN 1 ELSE 0 END)
+        AS missing_product_names,
+
+    SUM(CASE WHEN category IS NULL OR TRIM(category) = '' THEN 1 ELSE 0 END)
+        AS missing_categories,
+
+    SUM(CASE WHEN state IS NULL OR TRIM(state) = '' THEN 1 ELSE 0 END)
+        AS missing_states,
+
+    SUM(CASE WHEN sales_amount IS NULL THEN 1 ELSE 0 END)
+        AS missing_sales_amounts,
+
+    SUM(CASE WHEN revenue IS NULL THEN 1 ELSE 0 END)
+        AS missing_revenue_values,
+
+    SUM(CASE WHEN discount_percent IS NULL THEN 1 ELSE 0 END)
+        AS missing_discount_values
+FROM myntra_sales;
+
+
+-- ============================================================================
+-- 7. CHECK FOR DUPLICATE RECORDS
+-- ============================================================================
+
+SELECT
+    order_id,
+    product_name,
+    order_date,
+    COUNT(*) AS duplicate_count
+FROM myntra_sales
+GROUP BY
+    order_id,
+    product_name,
+    order_date
+HAVING COUNT(*) > 1
+ORDER BY duplicate_count DESC;
+
+
+-- ============================================================================
+-- 8. VIEW CLEANED DATA WITHOUT DUPLICATES
+-- ============================================================================
+
+WITH ranked_records AS (
+    SELECT
+        *,
+        ROW_NUMBER() OVER (
+            PARTITION BY order_id, product_name, order_date
+            ORDER BY order_id
+        ) AS row_number_value
+    FROM myntra_sales
+)
+SELECT *
+FROM ranked_records
+WHERE row_number_value = 1;
+
+
+-- ============================================================================
+-- 9. MAIN DASHBOARD KPIs
+-- ============================================================================
+
+SELECT
+    COUNT(DISTINCT order_id) AS total_orders,
+    ROUND(AVG(sales_amount), 2) AS average_sales_amount,
+    ROUND(SUM(sales_amount), 2) AS total_sales_amount,
+    ROUND(SUM(revenue), 2) AS total_revenue,
+    ROUND(AVG(discount_percent), 2) AS average_discount_percent,
+    COUNT(DISTINCT product_name) AS total_products
+FROM myntra_sales;
+
+
+-- ============================================================================
+-- 10. YEAR-WISE SALES PERFORMANCE
+-- ============================================================================
+
+SELECT
+    YEAR(order_date) AS sales_year,
+    COUNT(DISTINCT order_id) AS total_orders,
+    ROUND(SUM(sales_amount), 2) AS total_sales_amount,
+    ROUND(SUM(revenue), 2) AS total_revenue,
+    ROUND(AVG(discount_percent), 2) AS average_discount_percent
+FROM myntra_sales
+GROUP BY YEAR(order_date)
+ORDER BY sales_year;
+
+
+-- ============================================================================
+-- 11. MONTH-WISE SALES AND DISCOUNT ANALYSIS
+-- ============================================================================
+
+SELECT
+    MONTH(order_date) AS month_number,
+    MONTHNAME(order_date) AS month_name,
+    ROUND(SUM(sales_amount), 2) AS total_sales_amount,
+    ROUND(AVG(discount_percent), 2) AS average_discount_percent
+FROM myntra_sales
+GROUP BY
+    MONTH(order_date),
+    MONTHNAME(order_date)
+ORDER BY month_number;
+
+
+-- ============================================================================
+-- 12. TOTAL REVENUE BY BRAND
+-- ============================================================================
+
+SELECT
+    brand_name,
+    ROUND(SUM(revenue), 2) AS total_revenue
+FROM myntra_sales
+GROUP BY brand_name
+ORDER BY total_revenue DESC;
+
+
+-- ============================================================================
+-- 13. BRAND DISTRIBUTION
+-- ============================================================================
+
+SELECT
+    brand_name,
+    COUNT(*) AS number_of_records,
+    COUNT(DISTINCT order_id) AS total_orders,
+    ROUND(
+        COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (),
+        2
+    ) AS distribution_percent
+FROM myntra_sales
+GROUP BY brand_name
+ORDER BY number_of_records DESC;
+
+
+-- ============================================================================
+-- 14. BRAND PERFORMANCE SUMMARY
+-- ============================================================================
+
+SELECT
+    brand_name,
+    COUNT(DISTINCT order_id) AS total_orders,
+    ROUND(AVG(discount_percent), 2) AS average_discount,
+    ROUND(AVG(sales_amount), 2) AS average_sales_amount,
+    ROUND(SUM(sales_amount), 2) AS total_sales_amount,
+    ROUND(SUM(revenue), 2) AS total_revenue
+FROM myntra_sales
+GROUP BY brand_name
+ORDER BY total_sales_amount DESC;
+
+
+-- ============================================================================
+-- 15. SALES BY CUSTOMER CATEGORY
+-- ============================================================================
+
+SELECT
+    customer_category,
+    COUNT(DISTINCT order_id) AS total_orders,
+    ROUND(SUM(sales_amount), 2) AS total_sales_amount,
+    ROUND(SUM(revenue), 2) AS total_revenue
+FROM myntra_sales
+GROUP BY customer_category
+ORDER BY total_sales_amount DESC;
+
+
+-- ============================================================================
+-- 16. SALES BY PRODUCT CATEGORY
+-- ============================================================================
+
+SELECT
+    category,
+    COUNT(DISTINCT order_id) AS total_orders,
+    COUNT(DISTINCT product_name) AS total_products,
+    ROUND(SUM(sales_amount), 2) AS total_sales_amount,
+    ROUND(SUM(revenue), 2) AS total_revenue
+FROM myntra_sales
+GROUP BY category
+ORDER BY total_sales_amount DESC;
+
+
+-- ============================================================================
+-- 17. CATEGORY SALES PERCENTAGE
+-- ============================================================================
+
+SELECT
+    category,
+    ROUND(SUM(sales_amount), 2) AS total_sales_amount,
+    ROUND(
+        SUM(sales_amount) * 100.0 / SUM(SUM(sales_amount)) OVER (),
+        2
+    ) AS sales_percentage
+FROM myntra_sales
+GROUP BY category
+ORDER BY total_sales_amount DESC;
+
+
+-- ============================================================================
+-- 18. SALES BY SUB-CATEGORY
+-- ============================================================================
+
+SELECT
+    sub_category,
+    COUNT(DISTINCT order_id) AS total_orders,
+    ROUND(SUM(sales_amount), 2) AS total_sales_amount,
+    ROUND(SUM(revenue), 2) AS total_revenue
+FROM myntra_sales
+GROUP BY sub_category
+ORDER BY total_sales_amount DESC;
+
+
+-- ============================================================================
+-- 19. STATE-WISE SALES REVENUE
+-- ============================================================================
+
+SELECT
+    state,
+    category,
+    COUNT(DISTINCT order_id) AS total_orders,
+    ROUND(SUM(revenue), 2) AS total_revenue
+FROM myntra_sales
+GROUP BY
+    state,
+    category
+ORDER BY
+    state,
+    total_revenue DESC;
+
+
+-- ============================================================================
+-- 20. TOTAL REVENUE BY STATE
+-- ============================================================================
+
+SELECT
+    state,
+    COUNT(DISTINCT order_id) AS total_orders,
+    ROUND(SUM(sales_amount), 2) AS total_sales_amount,
+    ROUND(SUM(revenue), 2) AS total_revenue
+FROM myntra_sales
+GROUP BY state
+ORDER BY total_revenue DESC;
+
+
+-- ============================================================================
+-- 21. SALES BY DAY OF THE WEEK
+-- ============================================================================
+
+SELECT
+    DAYOFWEEK(order_date) AS day_number,
+    DAYNAME(order_date) AS day_name,
+    COUNT(DISTINCT order_id) AS total_orders,
+    ROUND(SUM(sales_amount), 2) AS total_sales_amount
+FROM myntra_sales
+GROUP BY
+    DAYOFWEEK(order_date),
+    DAYNAME(order_date)
+ORDER BY day_number;
+
+
+-- ============================================================================
+-- 22. QUARTER-WISE CATEGORY SALES
+-- ============================================================================
+
+SELECT
+    CONCAT('Qtr ', QUARTER(order_date)) AS sales_quarter,
+    category,
+    ROUND(SUM(sales_amount), 2) AS total_sales_amount
+FROM myntra_sales
+GROUP BY
+    QUARTER(order_date),
+    category
+ORDER BY
+    QUARTER(order_date),
+    total_sales_amount DESC;
+
+
+-- ============================================================================
+-- 23. TOP 10 SELLING PRODUCTS
+-- ============================================================================
+
+SELECT
+    product_name,
+    COUNT(DISTINCT order_id) AS total_orders,
+    ROUND(SUM(sales_amount), 2) AS total_sales_amount,
+    ROUND(SUM(revenue), 2) AS total_revenue
+FROM myntra_sales
+GROUP BY product_name
+ORDER BY total_sales_amount DESC
+LIMIT 10;
+
+
+-- ============================================================================
+-- 24. PRODUCT DISTRIBUTION BY SALES
+-- ============================================================================
+
+SELECT
+    product_name,
+    COUNT(*) AS sales_frequency,
+    COUNT(DISTINCT order_id) AS total_orders,
+    ROUND(SUM(sales_amount), 2) AS total_sales_amount
+FROM myntra_sales
+GROUP BY product_name
+ORDER BY sales_frequency DESC;
+
+
+-- ============================================================================
+-- 25. DISCOUNT AND SALES ANALYSIS
+-- ============================================================================
+
+SELECT
+    ROUND(discount_percent, 0) AS discount_percent,
+    COUNT(DISTINCT order_id) AS total_orders,
+    ROUND(SUM(sales_amount), 2) AS total_sales_amount,
+    ROUND(AVG(sales_amount), 2) AS average_sales_amount
+FROM myntra_sales
+GROUP BY ROUND(discount_percent, 0)
+ORDER BY discount_percent;
+
+
+-- ============================================================================
+-- 26. DISCOUNT RANGE ANALYSIS
+-- ============================================================================
+
+SELECT
+    CASE
+        WHEN discount_percent < 10 THEN 'Below 10%'
+        WHEN discount_percent BETWEEN 10 AND 19.99 THEN '10%–19.99%'
+        WHEN discount_percent BETWEEN 20 AND 29.99 THEN '20%–29.99%'
+        WHEN discount_percent BETWEEN 30 AND 39.99 THEN '30%–39.99%'
+        WHEN discount_percent BETWEEN 40 AND 49.99 THEN '40%–49.99%'
+        ELSE '50% and Above'
+    END AS discount_range,
+
+    COUNT(DISTINCT order_id) AS total_orders,
+    ROUND(SUM(sales_amount), 2) AS total_sales_amount,
+    ROUND(SUM(revenue), 2) AS total_revenue
+FROM myntra_sales
+GROUP BY discount_range
+ORDER BY MIN(discount_percent);
+
+
+-- ============================================================================
+-- 27. TOP BRAND IN EACH CATEGORY
+-- ============================================================================
+
+WITH brand_category_sales AS (
+    SELECT
+        category,
+        brand_name,
+        ROUND(SUM(sales_amount), 2) AS total_sales_amount,
+        DENSE_RANK() OVER (
+            PARTITION BY category
+            ORDER BY SUM(sales_amount) DESC
+        ) AS brand_rank
+    FROM myntra_sales
+    GROUP BY
+        category,
+        brand_name
+)
+SELECT
+    category,
+    brand_name,
+    total_sales_amount
+FROM brand_category_sales
+WHERE brand_rank = 1
+ORDER BY category;
+
+
+-- ============================================================================
+-- 28. TOP PRODUCT IN EACH CATEGORY
+-- ============================================================================
+
+WITH product_category_sales AS (
+    SELECT
+        category,
+        product_name,
+        ROUND(SUM(sales_amount), 2) AS total_sales_amount,
+        DENSE_RANK() OVER (
+            PARTITION BY category
+            ORDER BY SUM(sales_amount) DESC
+        ) AS product_rank
+    FROM myntra_sales
+    GROUP BY
+        category,
+        product_name
+)
+SELECT
+    category,
+    product_name,
+    total_sales_amount
+FROM product_category_sales
+WHERE product_rank = 1
+ORDER BY category;
+
+
+-- ============================================================================
+-- 29. YEAR-OVER-YEAR REVENUE GROWTH
+-- ============================================================================
+
+WITH yearly_revenue AS (
+    SELECT
+        YEAR(order_date) AS sales_year,
+        SUM(revenue) AS total_revenue
+    FROM myntra_sales
+    GROUP BY YEAR(order_date)
+)
+SELECT
+    sales_year,
+    ROUND(total_revenue, 2) AS total_revenue,
+    ROUND(
+        LAG(total_revenue) OVER (ORDER BY sales_year),
+        2
+    ) AS previous_year_revenue,
+    ROUND(
+        (
+            total_revenue - LAG(total_revenue) OVER (ORDER BY sales_year)
+        ) * 100.0
+        / NULLIF(
+            LAG(total_revenue) OVER (ORDER BY sales_year),
+            0
+        ),
+        2
+    ) AS revenue_growth_percent
+FROM yearly_revenue
+ORDER BY sales_year;
+
+
+-- ============================================================================
+-- 30. CREATE A POWER BI ANALYSIS VIEW
+-- ============================================================================
+
+CREATE OR REPLACE VIEW vw_myntra_sales_analysis AS
+SELECT
+    order_id,
+    order_date,
+    YEAR(order_date) AS sales_year,
+    MONTH(order_date) AS month_number,
+    MONTHNAME(order_date) AS month_name,
+    QUARTER(order_date) AS sales_quarter,
+    DAYNAME(order_date) AS day_name,
+    brand_name,
+    product_name,
+    category,
+    sub_category,
+    customer_category,
+    state,
+    sales_amount,
+    revenue,
+    discount_percent
+FROM myntra_sales;
+
+
+-- Preview the final Power BI view.
+SELECT *
+FROM vw_myntra_sales_analysis
+LIMIT 20;
+
+
+/*
+================================================================================
+END OF SQL FILE
+================================================================================
+*/
+"""
+
+output_path = Path("/mnt/data/Myntra_Sales_Analysis.sql")
+output_path.write_text(sql_content, encoding="utf-8")
+
+print(f"Created: {output_path}")
+print(f"Size: {output_path.stat().st_size:,} bytes")
